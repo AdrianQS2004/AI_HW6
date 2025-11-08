@@ -1,11 +1,10 @@
 # Introduction to Artificial Intelligence
 # Homework 6 - Part A
-# , code by Juan Carlos Rojas
+# Based on class example, code by Juan Carlos Rojas
 # Adrian Quiros, Mariela Venegas
 
-# PART A Homework 5 
 # second-order polynomial regression model 
-# Based on class example / Mariela Venegas
+
 
 import numpy as np
 import pandas as pd
@@ -36,53 +35,57 @@ train_stds = train_data[numeric_cols].std()
 train_data[numeric_cols] = (train_data[numeric_cols] - train_means) / train_stds
 test_data[numeric_cols] = (test_data[numeric_cols] - train_means) / train_stds
 
-# Get some lengths
-ncoeffs = train_data.shape[1]
-nsamples = train_data.shape[0]
+# -------------------------------------------------------------
+# Separate numeric vs categorical (dummy) columns / Converting data to PyTorch tensors
+# -------------------------------------------------------------
+num_cols = [c for c in train_data.columns if train_data[c].nunique() > 10]  # numeric
+cat_cols = [c for c in train_data.columns if c not in num_cols]             # dummy
+
+X_num = torch.tensor(train_data[num_cols].values, dtype=torch.float32)
+X_cat = torch.tensor(train_data[cat_cols].values, dtype=torch.float32)
+Y = torch.tensor(train_labels.values.reshape(-1, 1), dtype=torch.float32)
+
+X_num_test = torch.tensor(test_data[num_cols].values, dtype=torch.float32)
+X_cat_test = torch.tensor(test_data[cat_cols].values, dtype=torch.float32)
+Y_test = torch.tensor(test_labels.values.reshape(-1, 1), dtype=torch.float32)
+
+n_num = X_num.shape[1]
+n_cat = X_cat.shape[1]
+
+
+# -------------------------------------------------------------
+# Create and initialize weights and bias
+# Model parameters: 2nd-order for numeric, 1st-order for categorical
+# -------------------------------------------------------------
+W1 = torch.randn((n_num, 1), dtype=torch.float32, requires_grad=True)   # linear terms for numeric
+W2 = torch.randn((n_num, 1), dtype=torch.float32, requires_grad=True)   # quadratic terms for numeric
+Wc = torch.randn((n_cat, 1), dtype=torch.float32, requires_grad=True)   # categorical weights
+B = torch.zeros((1, 1), dtype=torch.float32, requires_grad=True)
+
+
+
+# History lists
+train_cost_hist = []
+test_cost_hist = []
+ 
+
 
 # ============================================================
 # Training constants
 # ============================================================
 learning_rate = 0.01
 n_iterations = 2000
-print_step = 100
+eval_step = 100     # evaluate and record MSE every eval_step iterations
 
-# ============================================================
-# Convert data to PyTorch tensors
-# ============================================================
-X = torch.tensor(train_data.values, dtype=torch.float32)
-Y = torch.tensor(train_labels.values.reshape(-1, 1), dtype=torch.float32)
-
-X_test = torch.tensor(test_data.values, dtype=torch.float32)
-Y_test = torch.tensor(test_labels.values.reshape(-1, 1), dtype=torch.float32)
-
-# ============================================================
-# Create and initialize weights and bias
-# ============================================================
-
-# Create a vector of coefficients with random values between -1 and 1
-W = torch.rand((ncoeffs, 1)) * 2 - 1
-
-# Create a bias variable initialized to zero
-B = torch.zeros((1, 1), dtype=torch.float32)
-
-# Start tracking gradients on W
-W.requires_grad_(True)
-B.requires_grad_(True)
 
 # ============================================================
 # Training loop
 # ============================================================
 
-# History lists
-train_cost_hist = []
-test_cost_hist = []
-eval_step = 100     # evaluate and record MSE every eval_step iterations
-
 for iteration in range(n_iterations):
 
     # Forward pass: predictions
-    Y_pred = X @ W + B
+    Y_pred = B + X_num @ W1 + (X_num ** 2) @ W2 + X_cat @ Wc
 
     # Mean squared error 
     mse = torch.mean((Y_pred - Y) ** 2) 
@@ -93,29 +96,38 @@ for iteration in range(n_iterations):
 
     # Gradient descent step: W = W - lr * dW
     with torch.no_grad():
-        W -= learning_rate * W.grad
+        W1 -= learning_rate * W1.grad
+        W2 -= learning_rate * W2.grad
+        Wc -= learning_rate * Wc.grad
         B -= learning_rate * B.grad
 
-    # Zero gradients before next step
-    W.grad.zero_()
-    B.grad.zero_()
+        # Zero gradients before next step
+        W1.grad.zero_()
+        W2.grad.zero_()
+        Wc.grad.zero_()
+        B.grad.zero_()
 
     # Evaluate and record cost every eval_step iterations
     if iteration % eval_step == 0:
-        # Training MSE
-        mse_train = mse.item()
-        train_cost_hist.append(mse_train)
-        
-        # Test MSE
+        # Evaluate and record training and test MSE (once per eval step)
         with torch.no_grad():
-            Y_pred_test = X_test @ W + B
+            # Training MSE (current)
+            mse_train = mse.item()
+
+            # Test MSE (on held-out test set)
+            Y_pred_test = B + X_num_test @ W1 + (X_num_test ** 2) @ W2 + X_cat_test @ Wc
             mse_test = torch.mean((Y_pred_test - Y_test) ** 2).item()
+
+            # Record
+            train_cost_hist.append(mse_train)
             test_cost_hist.append(mse_test)
-        
+
         print(f"Iteration {iteration:4d}: Train MSE: {mse_train:.1f} Test MSE: {mse_test:.1f}")
 
-# Stop tracking gradients on W & B
-W.requires_grad_(False)
+# Stop tracking gradients on W1, W2, Wc & B
+W1.requires_grad_(False)
+W2.requires_grad_(False)
+Wc.requires_grad_(False)
 B.requires_grad_(False)
 
 # Print the final MSEs
