@@ -1,9 +1,8 @@
 # Introduction to Artificial Intelligence
-# Homework 6 - Part A
-# Based on class example, code by Juan Carlos Rojas
+# Homework 6 - Part C
 # Adrian Quiros, Mariela Venegas
 
-# second-order polynomial regression model 
+# second-order polynomial regression model with L2 regularization 
 
 
 import numpy as np
