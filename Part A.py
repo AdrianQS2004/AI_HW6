@@ -11,6 +11,7 @@ import pandas as pd
 import sklearn.model_selection
 import torch
 import matplotlib.pyplot as plt
+import time
 
 def collapse_small_categories(df, col, min_count=10, other_label="others"):
     counts = df[col].value_counts()
@@ -82,6 +83,9 @@ eval_step = 100     # evaluate and record MSE every eval_step iterations
 # Training loop
 # ============================================================
 
+# Start timing
+training_start_time = time.time()
+
 for iteration in range(n_iterations):
 
     # Forward pass: predictions
@@ -130,11 +134,16 @@ W2.requires_grad_(False)
 Wc.requires_grad_(False)
 B.requires_grad_(False)
 
+# Stop timing
+training_end_time = time.time()
+training_time = training_end_time - training_start_time
+
 # Print the final MSEs
 train_rmse = (train_cost_hist[-1]) ** 0.5
 test_rmse = (test_cost_hist[-1]) ** 0.5
-print(f"Training RMSE: {train_rmse:.1f}")
+print(f"\nTraining RMSE: {train_rmse:.1f}")
 print(f"Test RMSE: {test_rmse:.1f}")
+print(f"Training Time: {training_time:.2f} seconds")
 
 # Plot MSE history
 iterations_hist = [i for i in range(0, n_iterations, eval_step)]

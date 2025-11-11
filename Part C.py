@@ -11,6 +11,7 @@ import pandas as pd
 import sklearn.model_selection
 import torch
 import matplotlib.pyplot as plt
+import time
 
 def collapse_small_categories(df, col, min_count=10, other_label="others"):
     counts = df[col].value_counts()
@@ -68,19 +69,20 @@ B = torch.zeros((1, 1), dtype=torch.float32, requires_grad=True)
 train_cost_hist = []
 test_cost_hist = []
  
-
-
 # ============================================================
 # Training constants
 # ============================================================
 learning_rate = 0.01
 n_iterations = 2000
 eval_step = 100     # evaluate and record MSE every eval_step iterations
-
+regularization_factor = 0.5
 
 # ============================================================
 # Training loop
 # ============================================================
+
+# Start timing
+training_start_time = time.time()
 
 for iteration in range(n_iterations):
 
@@ -90,9 +92,12 @@ for iteration in range(n_iterations):
     # Mean squared error 
     mse = torch.mean((Y_pred - Y) ** 2) 
 
+    l2_component =  (torch.sum(W1 ** 2) + torch.sum(W2 ** 2) + torch.sum(Wc ** 2))
+    L2_mse = mse + regularization_factor * l2_component
+    
     # Compute gradients of MSE with respect to W & B
     # Will be stored in W.grad & B.grad
-    mse.backward()
+    L2_mse.backward()
 
     # Gradient descent step: W = W - lr * dW
     with torch.no_grad():
@@ -101,28 +106,35 @@ for iteration in range(n_iterations):
         Wc -= learning_rate * Wc.grad
         B -= learning_rate * B.grad
 
-        # Zero gradients before next step
-        W1.grad.zero_()
-        W2.grad.zero_()
-        Wc.grad.zero_()
-        B.grad.zero_()
+      # Zero gradients before next step
+    W1.grad.zero_()
+    W2.grad.zero_()
+    Wc.grad.zero_()
+    B.grad.zero_()
 
     # Evaluate and record cost every eval_step iterations
     if iteration % eval_step == 0:
+        # Training MSE (current)
+        L2_mse_train = L2_mse.item()
         # Evaluate and record training and test MSE (once per eval step)
         with torch.no_grad():
-            # Training MSE (current)
-            mse_train = mse.item()
 
             # Test MSE (on held-out test set)
             Y_pred_test = B + X_num_test @ W1 + (X_num_test ** 2) @ W2 + X_cat_test @ Wc
             mse_test = torch.mean((Y_pred_test - Y_test) ** 2).item()
+            
+            l2_component = (torch.sum(W1 ** 2) + torch.sum(W2 ** 2) + torch.sum(Wc ** 2))
+            L2_mse_test = mse_test + regularization_factor * l2_component
 
             # Record
-            train_cost_hist.append(mse_train)
-            test_cost_hist.append(mse_test)
+            train_cost_hist.append(L2_mse_train)
+            test_cost_hist.append(L2_mse_test)
 
-        print(f"Iteration {iteration:4d}: Train MSE: {mse_train:.1f} Test MSE: {mse_test:.1f}")
+        print(f"Iteration {iteration:4d}: Train MSE: {L2_mse_train:.1f} Test MSE: {L2_mse_test:.1f}")
+
+# Stop timing
+training_end_time = time.time()
+training_time = training_end_time - training_start_time
 
 # Stop tracking gradients on W1, W2, Wc & B
 W1.requires_grad_(False)
@@ -131,10 +143,11 @@ Wc.requires_grad_(False)
 B.requires_grad_(False)
 
 # Print the final MSEs
-train_rmse = (train_cost_hist[-1]) ** 0.5
-test_rmse = (test_cost_hist[-1]) ** 0.5
-print(f"Training RMSE: {train_rmse:.1f}")
+train_rmse = (L2_mse_train) ** 0.5
+test_rmse = (L2_mse_test) ** 0.5
+print(f"\nTraining RMSE: {train_rmse:.1f}")
 print(f"Test RMSE: {test_rmse:.1f}")
+print(f"Training Time: {training_time:.2f} seconds")
 
 # Plot MSE history
 iterations_hist = [i for i in range(0, n_iterations, eval_step)]
@@ -145,3 +158,18 @@ plt.ylabel("Cost (MSE)")
 plt.title("Cost evolution")
 plt.legend()
 plt.show()
+
+# Compute standard deviation of model coefficients
+with torch.no_grad():
+    # Flatten all weight tensors and concatenate
+    all_weights = torch.cat([W1.flatten(), W2.flatten(), Wc.flatten()])
+    
+    # Compute statistics
+    weights_mean = torch.mean(all_weights).item()
+    weights_std = torch.std(all_weights).item()
+
+    
+    print("\n" + "="*50)
+    print(f"Std Dev of all weights: {weights_std:.6f}")
+    print("="*50)
+    
